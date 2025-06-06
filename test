@@ -1,0 +1,242 @@
+<process name="ProcessHourlyRotatedLogsWithCleanup">
+
+  <!-- STEP 1: Generate timestamp components for rotation -->
+  <assign to="today">
+    <simple type="bpml:format-date">
+      <bpml:format-date format="yyyyMMdd" date="now"/>
+    </simple>
+  </assign>
+
+  <assign to="hour">
+    <simple type="bpml:format-date">
+      <bpml:format-date format="HH" date="now"/>
+    </simple>
+  </assign>
+
+  <assign to="output_filename">/shared/output/concat_output_$today$_$hour$.log</assign>
+
+  <!-- STEP 2: List all files in /shared/logs/ -->
+  <operation name="ListLogFiles">
+    <participant name="FileSystemAdapter"/>
+    <output message="FileSystemInputMessage">
+      <field name="Action">List</field>
+      <field name="DirName">/shared/logs</field>
+      <field name="FileFilter">*.log</field>
+    </output>
+    <input message="FileSystemOutputMessage"/>
+  </operation>
+
+  <!-- STEP 3: Loop through files -->
+  <sequence name="LoopFiles">
+    <for-each select="FileSystemOutputMessage/Document/Name">
+      <sequence>
+
+        <assign to="current_filename" from="." />
+
+        <!-- STEP 4: Check if this file is already processed in the last 5 hours -->
+        <operation name="CheckIfProcessed">
+          <participant name="SQLAdapter"/>
+          <output message="SQLInputMessage">
+            <sql>
+              SELECT FILENAME FROM PROCESSED_LOGS
+              WHERE FILENAME = '$current_filename$'
+              AND PROCESSED_TIMESTAMP > CURRENT_TIMESTAMP - INTERVAL '5' HOUR
+            </sql>
+          </output>
+          <input message="SQLOutputMessage"/>
+        </operation>
+
+        <!-- STEP 5: If not processed -->
+        <choice>
+          <when expression="string-length(SQLOutputMessage/Document/SQLResults/Row/FILENAME) = 0">
+            <sequence>
+
+              <!-- STEP 5.1: Read log file -->
+              <operation name="ReadFile">
+                <participant name="FileSystemAdapter"/>
+                <output message="FileSystemInputMessage">
+                  <field name="Action">Read</field>
+                  <field name="FileName">/shared/logs/$current_filename$</field>
+                </output>
+                <input message="FileSystemOutputMessage"/>
+              </operation>
+
+              <!-- STEP 5.2: Append to rotated hourly file -->
+              <operation name="AppendToHourlyFile">
+                <participant name="FileSystemAdapter"/>
+                <output message="FileSystemInputMessage">
+                  <field name="Action">Append</field>
+                  <field name="FileName">$output_filename$</field>
+                  <field name="Content" isCDATA="true">$FileSystemOutputMessage/Document/Content$</field>
+                </output>
+              </operation>
+
+              <!-- STEP 5.3: Insert into PROCESSED_LOGS -->
+              <operation name="InsertToDB">
+                <participant name="SQLAdapter"/>
+                <output message="SQLInputMessage">
+                  <sql>
+                    INSERT INTO PROCESSED_LOGS (FILENAME, PROCESSED_TIMESTAMP)
+                    VALUES ('$current_filename$', CURRENT_TIMESTAMP)
+                  </sql>
+                </output>
+              </operation>
+
+            </sequence>
+          </when>
+        </choice>
+
+      </sequence>
+    </for-each>
+  </sequence>
+
+  <!-- STEP 6: Compress previous hour’s file -->
+  <assign to="prev_hour">
+    <simple type="bpml:format-date">
+      <bpml:format-date format="HH" date="-1h"/>
+    </simple>
+  </assign>
+
+  <assign to="prev_output_file">/shared/output/concat_output_$today$_$prev_hour$.log</assign>
+  <assign to="zip_file">/shared/output/concat_output_$today$_$prev_hour$.zip</assign>
+
+  <operation name="CompressFile">
+    <participant name="ZipUtility"/>
+    <output message="ZipUtilityInputMessage">
+      <field name="Action">Compress</field>
+      <field name="InputFile">$prev_output_file$</field>
+      <field name="OutputFile">$zip_file$</field>
+      <field name="RemoveOriginal">true</field>
+    </output>
+  </operation>
+
+  <!-- STEP 7: Clean up logs older than 2 days -->
+  <operation name="DeleteOldLogs">
+    <participant name="SQLAdapter"/>
+    <output message="SQLInputMessage">
+      <sql>
+        DELETE FROM PROCESSED_LOGS
+        WHERE PROCESSED_TIMESTAMP < CURRENT_TIMESTAMP - INTERVAL '2' DAY
+      </sql>
+    </output>
+  </operation>
+
+</process>
+
+
+
+CREATE TABLE PROCESSED_LOGS (
+    FILENAME VARCHAR(255) PRIMARY KEY,
+    PROCESSED_TIMESTAMP TIMESTAMP
+);
+
+
+
+CREATE TABLE PROCESSED_LOGS (
+    FILENAME VARCHAR(255) PRIMARY KEY,
+    PROCESSED_TIMESTAMP TIMESTAMP
+);
+
+
+
+DELETE FROM PROCESSED_LOGS
+WHERE PROCESSED_TIMESTAMP < CURRENT_TIMESTAMP - INTERVAL '5' HOUR
+
+
+CREATE TABLE PROCESSED_LOGS (
+    FILENAME VARCHAR(255) PRIMARY KEY,
+    PROCESSED_TIMESTAMP TIMESTAMP
+);
+
+
+<process name="ProcessNewLogs_BP">
+  <!-- Step 1: List all files -->
+  <operation name="ListLogFiles">
+    <participant name="FileSystemAdapter"/>
+    <output message="FileSystemInputMessage">
+      <field name="Action">List</field>
+      <field name="DirName">/shared/logs</field>
+      <field name="FileFilter">*.log</field>
+    </output>
+    <input message="FileSystemOutputMessage"/>
+  </operation>
+
+  <!-- Step 2: Loop through files -->
+  <sequence name="LoopFiles">
+    <for-each select="FileSystemOutputMessage/Document/Name">
+      <sequence name="PerFile">
+
+        <!-- Save filename to variable -->
+        <assign to="current_filename" from="." />
+
+        <!-- Step 3: Check DB for this file in last 5 hours -->
+        <operation name="CheckIfProcessed">
+          <participant name="SQLAdapter"/>
+          <output message="SQLInputMessage">
+            <sql>
+              SELECT FILENAME FROM PROCESSED_LOGS
+              WHERE FILENAME = '$current_filename$'
+              AND PROCESSED_TIMESTAMP > CURRENT_TIMESTAMP - INTERVAL '5' HOUR
+            </sql>
+          </output>
+          <input message="SQLOutputMessage"/>
+        </operation>
+
+        <!-- Step 4: If not processed -->
+        <choice name="OnlyIfNewFile">
+          <when expression="string-length(SQLOutputMessage/Document/SQLResults/Row/FILENAME) = 0">
+            <sequence name="ProcessNewFile">
+
+              <!-- Step 4.1: Read file content -->
+              <operation name="ReadFile">
+                <participant name="FileSystemAdapter"/>
+                <output message="FileSystemInputMessage">
+                  <field name="Action">Read</field>
+                  <field name="FileName">/shared/logs/$current_filename$</field>
+                </output>
+                <input message="FileSystemOutputMessage"/>
+              </operation>
+
+              <!-- Step 4.2: Append to concat file -->
+              <operation name="AppendFile">
+                <participant name="FileSystemAdapter"/>
+                <output message="FileSystemInputMessage">
+                  <field name="Action">Append</field>
+                  <field name="FileName">/shared/output/concat_output.log</field>
+                  <field name="Content" isCDATA="true">$FileSystemOutputMessage/Document/Content$</field>
+                </output>
+              </operation>
+
+              <!-- Step 4.3: Insert into PROCESSED_LOGS -->
+              <operation name="InsertToDB">
+                <participant name="SQLAdapter"/>
+                <output message="SQLInputMessage">
+                  <sql>
+                    INSERT INTO PROCESSED_LOGS (FILENAME, PROCESSED_TIMESTAMP)
+                    VALUES ('$current_filename$', CURRENT_TIMESTAMP)
+                  </sql>
+                </output>
+              </operation>
+
+            </sequence>
+          </when>
+        </choice>
+
+      </sequence>
+    </for-each>
+  </sequence>
+</process>
+
+
+ Assumptions:
+Folder: /shared/logs/
+
+Appended output file: /shared/output/concat_output.log
+
+Database table: PROCESSED_LOGS (FILENAME, PROCESSED_TIMESTAMP)
+
+SQL Adapter configured and named SQLAdapter
+
+File System Adapter named FileSystemAdapter
+
+The BP runs every 5 minutes or as needed via a schedule
