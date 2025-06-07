@@ -1,0 +1,20 @@
+<!-- Set the SQL with dynamic variable substitution -->
+<assign to="sql">
+  INSERT INTO process_logs (FILENAME, PROCESSED_TIMESTAMP)
+  VALUES ('$current_filename$', CURRENT_TIMESTAMP)
+</assign>
+
+<!-- Then use this variable in the Lightweight JDBC Adapter -->
+<operation name="Lightweight JDBC Adapter">
+  <participant name="LightweightJDBCAdapterQuery"/>
+  <output message="LightweightJDBCAdapterTypeInputMessage">
+    <assign to="pool">oraclePool</assign>
+    <assign to="query_type">INSERT</assign>
+    <assign to="row_name">Process</assign>
+    <assign to="result_name">result</assign>
+    <assign to="sql" from="string(sql)"/>
+  </output>
+  <input message="inmsg">
+    <assign to="." from="*"/>
+  </input>
+</operation>
