@@ -1,10 +1,6 @@
-<!-- This must come after you assign current_filename correctly -->
-<assign to="sql">
-  <simple type="xsd:string">
-    INSERT INTO process_logs (FILENAME, PROCESSED_TIMESTAMP)
-    VALUES ('$current_filename$', CURRENT_TIMESTAMP)
-  </simple>
-</assign>
+<assign name="Assign" to="current_filename" from="/ProcessData/PrimaryDocument/@Name"/>
+<assign name="Assign" to="sql"
+        from="concat('INSERT INTO process_logs (FILENAME, PROCESSED_TIMESTAMP) VALUES (''', $current_filename$, ''', CURRENT_TIMESTAMP)')"/>
 
 <operation name="Lightweight JDBC Adapter">
   <participant name="LightweightJDBCAdapterQuery"/>
