@@ -47,7 +47,7 @@
         <assign to="sql">
           SELECT FILENAME FROM process_logs
           WHERE FILENAME = '$current_filename$'
-          AND PROCESSED_TIMESTAMP > CURRENT_TIMESTAMP - INTERVAL '5' HOUR
+          AND PROCESSED_TIMESTAMP &gt; CURRENT_TIMESTAMP - INTERVAL '5' HOUR
         </assign>
       </output>
       <input message="inmsg">
@@ -63,7 +63,7 @@
       <assign name="ChoiceExecuted" to="/ProcessData/ChoiceValidation" from="'ok'"/>
     </choice>
     <assign name="Assign" to="DOCUMENT" from="/ProcessData/PrimaryDocument/@SCIOObjectID"/>
-    <operation name="File System Adapter">
+    <operation name="File System Adapter - Extract">
       <participant name="ESFileSystem"/>
       <output message="FileSystemInputMessage">
         <assign to="." from="*"/>
@@ -77,8 +77,8 @@
     </operation>
   </sequence>
 
-  <sequence name="MainFlow">
-    <operation name="File System Adapter">
+  <sequence>
+    <operation name="File System Adapter - Collect">
       <participant name="ESFileSystem"/>
       <output message="FileSystemInputMessage">
         <assign to="." from="*"/>
@@ -111,7 +111,7 @@
       </input>
     </operation>
 
-    <assign name="Assign" to="FILE_COUNT">1</assign>
+    <assign name="Initialize File Count" to="FILE_COUNT">1</assign>
 
     <choice name="FileCountCheck">
       <select>
@@ -119,7 +119,7 @@
       </select>
       <assign name="ChoiceCheck" to="/ProcessData/ChoiceValidation2" from="'ok'"/>
     </choice>
-    
+
     <operation name="DoNothing">
       <participant name="BPS"/>
       <output message="InvokeServiceInputMessage">
@@ -130,5 +130,4 @@
       </input>
     </operation>
   </sequence>
-
 </process>
