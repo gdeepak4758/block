@@ -1,0 +1,21 @@
+<!-- This must come after you assign current_filename correctly -->
+<assign to="sql">
+  <simple type="xsd:string">
+    INSERT INTO process_logs (FILENAME, PROCESSED_TIMESTAMP)
+    VALUES ('$current_filename$', CURRENT_TIMESTAMP)
+  </simple>
+</assign>
+
+<operation name="Lightweight JDBC Adapter">
+  <participant name="LightweightJDBCAdapterQuery"/>
+  <output message="LightweightJDBCAdapterTypeInputMessage">
+    <assign to="pool">oraclePool</assign>
+    <assign to="query_type">INSERT</assign>
+    <assign to="row_name">Process</assign>
+    <assign to="result_name">result</assign>
+    <assign to="sql" from="sql"/>
+  </output>
+  <input message="inmsg">
+    <assign to="." from="*"/>
+  </input>
+</operation>
