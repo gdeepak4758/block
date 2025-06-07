@@ -1,0 +1,120 @@
+<process name="EDE_Cloudwatch_Deliver_Logs">
+  <rule name="FILE_CONDITION">
+    <condition>number(//FILE_COUNT/text()) &lt; number(//FSA_DocumentCount/text())</condition>
+  </rule>
+
+  <sequence name="Sequence Start">
+    <operation name="File System Adapter">
+      <participant name="ESFileSystem"/>
+      <output message="FileSystemInputMessage">
+        <assign to="." from="*"/>
+        <assign to="Action">FS_COLLECT</assign>
+        <assign to="bootstrap">false</assign>
+        <assign to="collectionFolder">/sfgdata/documents/s3temp</assign>
+        <assign to="fileModTimeThreshold">10</assign>
+        <assign to="deleteAfterCollect">true</assign>
+        <assign to="thresholdWait">true</assign>
+        <assign to="filter">*_CyberLogs.json</assign>
+        <assign to="maxThreads">10</assign>
+        <assign to="collectMultiple">true</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"/>
+      </input>
+    </operation>
+
+    <operation name="Timestamp Utility">
+      <participant name="TimestampUtilService"/>
+      <output message="TimestampUtilServiceTypeInputMessage">
+        <assign to="action">add</assign>
+        <assign to="baseTime">now</assign>
+        <assign to="format">yyyy-MM-dd HH:mm:ss</assign>
+        <assign to="offsetTime">1800</assign>
+        <assign to="scale">sec</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="/ProcessData/CURRENT_TIMESTAMP" from="*" append="true"/>
+      </input>
+    </operation>
+
+    <assign name="Assign" to="FILE_COUNT">1</assign>
+
+    <choice name="Condition">
+      <select>
+        <case ref="FILE_CONDITION">
+          <sequence name="PJ">
+            <assign name="Assign" to="PrimaryDocument" from="//*[starts-with(name(),'FSA_Document')][position()=/ProcessData/FILE_COUNT/text()]/@SCIOObjectID"/>
+            <assign name="Assign" to="current_filename" from="/ProcessData/PrimaryDocument/text()"/>
+
+            <operation name="Lightweight JDBC Adapter">
+              <participant name="LightweightJDBCAdapterQuery"/>
+              <output message="LightweightJDBCAdapterTypeInputMessage">
+                <assign to="pool">oraclePool</assign>
+                <assign to="query_type">SELECT</assign>
+                <assign to="row_name">Process</assign>
+                <assign to="result_name">result</assign>
+                <assign to="sql">
+                  SELECT FILENAME FROM process_logs
+                  WHERE FILENAME = '$current_filename$'
+                  AND PROCESSED_TIMESTAMP &gt; CURRENT_TIMESTAMP - INTERVAL '5' HOUR
+                </assign>
+              </output>
+              <input message="inmsg">
+                <assign to="." from="*"/>
+              </input>
+            </operation>
+
+            <assign name="Assign" to="IS_DUPLICATE" from="string(boolean(/ProcessData/result/Process/FILENAME))"/>
+
+            <choice name="DuplicateCheck">
+              <select>
+                <case>
+                  <condition>/ProcessData/IS_DUPLICATE = 'true'</condition>
+                  <sequence name="SkipInsert">
+                    <assign name="Log" to="/ProcessData/status" from="'Skipped insert due to duplicate'"/>
+                  </sequence>
+                </case>
+                <case>
+                  <condition>/ProcessData/IS_DUPLICATE = 'false'</condition>
+                  <sequence name="PerformInsert">
+                    <operation name="Lightweight JDBC Adapter">
+                      <participant name="LightweightJDBCAdapterQuery"/>
+                      <output message="LightweightJDBCAdapterTypeInputMessage">
+                        <assign to="pool">oraclePool</assign>
+                        <assign to="query_type">INSERT</assign>
+                        <assign to="row_name">Process</assign>
+                        <assign to="result_name">result</assign>
+                        <assign to="sql">
+                          INSERT INTO process_logs (FILENAME, PROCESSED_TIMESTAMP)
+                          VALUES ('$current_filename$', CURRENT_TIMESTAMP)
+                        </assign>
+                      </output>
+                      <input message="inmsg">
+                        <assign to="." from="*"/>
+                      </input>
+                    </operation>
+                  </sequence>
+                </case>
+              </select>
+            </choice>
+
+            <assign name="Assign" to="DOCUMENT" from="/ProcessData/PrimaryDocument/@SCIOObjectID"/>
+
+            <operation name="File System Adapter">
+              <participant name="ESFileSystem"/>
+              <output message="FileSystemInputMessage">
+                <assign to="." from="*"/>
+                <assign to="Action">FS_EXTRACT</assign>
+                <assign to="bootstrap">false</assign>
+                <assign to="extractionFolder">/sfg/sterlingintegrator/install/cloudwatch</assign>
+              </output>
+              <input message="inmsg">
+                <assign to="." from="*"/>
+              </input>
+            </operation>
+          </sequence>
+        </case>
+      </select>
+    </choice>
+  </sequence>
+</process>
