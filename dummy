@@ -1,0 +1,47 @@
+<choice name="Condition">
+  <select>
+    <case>
+      <condition>/ProcessData/IS_DUPLICATE = 'true'</condition>
+      <sequence name="SkipInsert">
+        <!-- You can log or just leave this empty -->
+        <assign name="Log" to="ProcessData/status" from="'Skipped insert due to duplicate'"/>
+      </sequence>
+    </case>
+    <case>
+      <condition>/ProcessData/IS_DUPLICATE = 'false'</condition>
+      <sequence name="PerformInsert">
+        <!-- Your insert logic starts here -->
+        <operation name="Lightweight JDBC Adapter">
+          <participant name="LightweightJDBCAdapterQuery"/>
+          <output message="LightweightJDBCAdapterTypeInputMessage">
+            <assign to="pool">oraclePool</assign>
+            <assign to="query_type">INSERT</assign>
+            <assign to="row_name">Process</assign>
+            <assign to="result_name">result</assign>
+            <assign to="sql">
+              INSERT INTO process_logs (FILENAME, PROCESSED_TIMESTAMP)
+              VALUES ('$current_filename$', CURRENT_TIMESTAMP)
+            </assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"/>
+          </input>
+        </operation>
+      </sequence>
+    </case>
+  </select>
+</choice>
+
+
+<choice name="Condition">
+  <select>
+    <case>
+      <condition>/ProcessData/FILE_COUNT &gt; 0</condition>
+      <sequence name="PJ">
+        <!-- Your PJ logic here -->
+        <assign name="Assign" to="PrimaryDocument" from="..."/>
+        <assign name="Assign" to="current_filename" from="..."/>
+      </sequence>
+    </case>
+  </select>
+</choice>
