@@ -1,0 +1,5 @@
+<assign to="sql" from="concat('INSERT INTO process_logs (FILENAME, PROCESSED_TIMESTAMP) VALUES (''', $current_filename$, ''', CURRENT_TIMESTAMP)')"/>
+
+<assign name="Assign" to="current_filename" from="/ProcessData/PrimaryDocument/@Name"/>
+
+<assign to="." from="concat('Current filename: ', $current_filename$)"/>
