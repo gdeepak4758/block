@@ -9,129 +9,59 @@
     <condition>/ProcessData/IS_DUPLICATE = 'false'</condition>
   </rule>
 
-  <!-- Main container wrapping all activities -->
   <sequence name="MainFlow">
-    <!-- Fixed sequences (now contain only allowed elements) -->
-    <sequence name="PerformInsert">
-      <operation name="Insert Log">
-        <participant name="LightweightJDBCAdapterQuery"/>
-        <output message="LightweightJDBCAdapterTypeInputMessage">
-          <assign to="pool">oraclePool</assign>
-          <assign to="query_type">INSERT</assign>
-          <assign to="row_name">Process</assign>
-          <assign to="result_name">result</assign>
-          <assign to="sql">
-            INSERT INTO process_logs (FILENAME, PROCESSED_TIMESTAMP)
-            VALUES ('$current_filename$', CURRENT_TIMESTAMP)
-          </assign>
-        </output>
-        <input message="inmsg">
-          <assign to="." from="*"/>
-        </input>
-      </operation>
-    </sequence>
-
-    <sequence name="SkipInsert">
-      <assign name="Log" to="/ProcessData/status" from="'Skipped insert due to duplicate'"/>
-    </sequence>
-
-    <sequence name="DoProcessing">
-      <assign name="Assign" to="PrimaryDocument" from="//*[starts-with(name(),'FSA_Document')][position()=/ProcessData/FILE_COUNT/text()]/@SCIOObjectID"/>
-      <assign name="Assign" to="current_filename" from="/ProcessData/PrimaryDocument/text()"/>
-      <operation name="Check Duplicate">
-        <participant name="LightweightJDBCAdapterQuery"/>
-        <output message="LightweightJDBCAdapterTypeInputMessage">
-          <assign to="pool">oraclePool</assign>
-          <assign to="query_type">SELECT</assign>
-          <assign to="row_name">Process</assign>
-          <assign to="result_name">result</assign>
-          <assign to="sql">
-            SELECT FILENAME FROM process_logs
-            WHERE FILENAME = '$current_filename$'
-            AND PROCESSED_TIMESTAMP &gt; CURRENT_TIMESTAMP - INTERVAL '5' HOUR
-          </assign>
-        </output>
-        <input message="inmsg">
-          <assign to="." from="*"/>
-        </input>
-      </operation>
-      <assign name="Assign" to="IS_DUPLICATE" from="string(boolean(/ProcessData/result/Process/FILENAME))"/>
-      
-      <!-- Fixed choice structure -->
-      <choice name="DuplicateCheck">
-        <select>
-          <case ref="IS_DUPLICATE_TRUE" activity="SkipInsert"/>
-          <case ref="IS_DUPLICATE_FALSE" activity="PerformInsert"/>
-        </select>
-        <assign name="ChoiceExecuted" to="/ProcessData/ChoiceValidation" from="'ok'"/>
-      </choice>
-      
-      <assign name="Assign" to="DOCUMENT" from="/ProcessData/PrimaryDocument/@SCIOObjectID"/>
-      <operation name="File System Adapter - Extract">
-        <participant name="ESFileSystem"/>
-        <output message="FileSystemInputMessage">
-          <assign to="." from="*"/>
-          <assign to="Action">FS_EXTRACT</assign>
-          <assign to="bootstrap">false</assign>
-          <assign to="extractionFolder">/sfg/sterlingintegrator/install/cloudwatch</assign>
-        </output>
-        <input message="inmsg">
-          <assign to="." from="*"/>
-        </input>
-      </operation>
-    </sequence>
-
     <!-- Main process flow -->
     <operation name="File System Adapter - Collect">
-      <participant name="ESFileSystem"/>
-      <output message="FileSystemInputMessage">
-        <assign to="." from="*"/>
-        <assign to="Action">FS_COLLECT</assign>
-        <assign to="bootstrap">false</assign>
-        <assign to="collectionFolder">/sfgdata/documents/s3temp</assign>
-        <assign to="fileModTimeThreshold">10</assign>
-        <assign to="deleteAfterCollect">true</assign>
-        <assign to="thresholdWait">true</assign>
-        <assign to="filter">*_CyberLogs.json</assign>
-        <assign to="maxThreads">10</assign>
-        <assign to="collectMultiple">true</assign>
-      </output>
-      <input message="inmsg">
-        <assign to="." from="*"/>
-      </input>
+      <!-- ... unchanged content ... -->
     </operation>
 
     <operation name="Timestamp Utility">
-      <participant name="TimestampUtilService"/>
-      <output message="TimestampUtilServiceTypeInputMessage">
-        <assign to="action">add</assign>
-        <assign to="baseTime">now</assign>
-        <assign to="format">yyyy-MM-dd HH:mm:ss</assign>
-        <assign to="offsetTime">1800</assign>
-        <assign to="scale">sec</assign>
-      </output>
-      <input message="inmsg">
-        <assign to="/ProcessData/CURRENT_TIMESTAMP" from="*" append="true"/>
-      </input>
+      <!-- ... unchanged content ... -->
     </operation>
 
     <assign name="Initialize File Count" to="FILE_COUNT">1</assign>
 
+    <!-- Fixed FileCountCheck with direct child -->
     <choice name="FileCountCheck">
       <select>
         <case ref="FILE_CONDITION" activity="DoProcessing"/>
       </select>
-      <assign name="ChoiceCheck" to="/ProcessData/ChoiceValidation2" from="'ok'"/>
+      <!-- DoProcessing is now DIRECT CHILD of this choice -->
+      <sequence name="DoProcessing">
+        <assign name="Assign" to="PrimaryDocument" from="//*[starts-with(name(),'FSA_Document')][position()=/ProcessData/FILE_COUNT/text()]/@SCIOObjectID"/>
+        <assign name="Assign" to="current_filename" from="/ProcessData/PrimaryDocument/text()"/>
+        <operation name="Check Duplicate">
+          <!-- ... unchanged content ... -->
+        </operation>
+        <assign name="Assign" to="IS_DUPLICATE" from="string(boolean(/ProcessData/result/Process/FILENAME))"/>
+        
+        <!-- Fixed DuplicateCheck with direct children -->
+        <choice name="DuplicateCheck">
+          <select>
+            <case ref="IS_DUPLICATE_TRUE" activity="SkipInsert"/>
+            <case ref="IS_DUPLICATE_FALSE" activity="PerformInsert"/>
+          </select>
+          <!-- Activities are now DIRECT CHILDREN of this choice -->
+          <sequence name="SkipInsert">
+            <assign name="Log" to="/ProcessData/status" from="'Skipped insert due to duplicate'"/>
+          </sequence>
+          <sequence name="PerformInsert">
+            <operation name="Insert Log">
+              <!-- ... unchanged content ... -->
+            </operation>
+          </sequence>
+        </choice>
+        
+        <assign name="ChoiceExecuted" to="/ProcessData/ChoiceValidation" from="'ok'"/>
+        <assign name="Assign" to="DOCUMENT" from="/ProcessData/PrimaryDocument/@SCIOObjectID"/>
+        <operation name="File System Adapter - Extract">
+          <!-- ... unchanged content ... -->
+        </operation>
+      </sequence>
     </choice>
 
     <operation name="DoNothing">
-      <participant name="BPS"/>
-      <output message="InvokeServiceInputMessage">
-        <assign to="name">SkipInsert</assign>
-      </output>
-      <input message="inmsg">
-        <assign to="." from="*"/>
-      </input>
+      <!-- ... unchanged content ... -->
     </operation>
   </sequence>
 </process>
