@@ -37,7 +37,6 @@
   <sequence name="DoProcessing">
     <assign name="Assign" to="PrimaryDocument" from="//*[starts-with(name(),'FSA_Document')][position()=/ProcessData/FILE_COUNT/text()]/@SCIOObjectID"/>
     <assign name="Assign" to="current_filename" from="/ProcessData/PrimaryDocument/text()"/>
-
     <operation name="Check Duplicate">
       <participant name="LightweightJDBCAdapterQuery"/>
       <output message="LightweightJDBCAdapterTypeInputMessage">
@@ -48,26 +47,22 @@
         <assign to="sql">
           SELECT FILENAME FROM process_logs
           WHERE FILENAME = '$current_filename$'
-          AND PROCESSED_TIMESTAMP &gt; CURRENT_TIMESTAMP - INTERVAL '5' HOUR
+          AND PROCESSED_TIMESTAMP > CURRENT_TIMESTAMP - INTERVAL '5' HOUR
         </assign>
       </output>
       <input message="inmsg">
         <assign to="." from="*"/>
       </input>
     </operation>
-
     <assign name="Assign" to="IS_DUPLICATE" from="string(boolean(/ProcessData/result/Process/FILENAME))"/>
-
     <choice name="DuplicateCheck">
-  <select>
+      <select>
         <case ref="IS_DUPLICATE_TRUE" activity="SkipInsert"/>
         <case ref="IS_DUPLICATE_FALSE" activity="PerformInsert"/>
       </select>
-  <assign name="ChoiceExecuted" to="/ProcessData/ChoiceValidation" from="'ok'"/>
+      <assign name="ChoiceExecuted" to="/ProcessData/ChoiceValidation" from="'ok'"/>
     </choice>
-
     <assign name="Assign" to="DOCUMENT" from="/ProcessData/PrimaryDocument/@SCIOObjectID"/>
-
     <operation name="File System Adapter">
       <participant name="ESFileSystem"/>
       <output message="FileSystemInputMessage">
@@ -82,7 +77,7 @@
     </operation>
   </sequence>
 
-  <sequence>
+  <sequence name="MainFlow">
     <operation name="File System Adapter">
       <participant name="ESFileSystem"/>
       <output message="FileSystemInputMessage">
@@ -119,19 +114,21 @@
     <assign name="Assign" to="FILE_COUNT">1</assign>
 
     <choice name="FileCountCheck">
-  <select>
+      <select>
         <case ref="FILE_CONDITION" activity="DoProcessing"/>
       </select>
-  <assign name="ChoiceCheck" to="/ProcessData/ChoiceValidation2" from="'ok'"/>
+      <assign name="ChoiceCheck" to="/ProcessData/ChoiceValidation2" from="'ok'"/>
     </choice>
+    
+    <operation name="DoNothing">
+      <participant name="BPS"/>
+      <output message="InvokeServiceInputMessage">
+        <assign to="name">SkipInsert</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"/>
+      </input>
+    </operation>
   </sequence>
-  <operation name="DoNothing">
-  <participant name="BPS"/>
-  <output message="InvokeServiceInputMessage">
-    <assign to="name">SkipInsert</assign>
-  </output>
-  <input message="inmsg">
-    <assign to="." from="*"/>
-  </input>
-</operation>
+
 </process>
