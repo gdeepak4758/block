@@ -1,0 +1,117 @@
+<process name="EDE_AWS_Deliver_Logs">
+  <rule name="FILE_CONDITION">
+    <condition>number(//FILE_COUNT/text()) &lt;= number(//FSA_DocumentCount/text())</condition>
+  </rule>
+
+  <sequence name="Sequence Start">
+    <operation name="File System Adapter">
+      <participant name="E5FileSystem"/>
+      <output message="FileSystemInputMessage">
+        <assign to="." from="*"></assign>
+        <assign to="Action">FS_COLLECT</assign>
+        <assign to="bootstrap">false</assign>
+        <assign to="collectionFolder">/sfgdata/documents/stemp</assign>
+		<assign to="fileModTimeThreshold">10</assign>
+        <assign to="thresholdWait">true</assign>
+        <assign to="filter">*_CyberLogs.json</assign>
+        <assign to="maxThreads">10</assign>
+        <assign to="collectMultiple">true</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+	
+	<!-- getting Time_Stamp --> 
+	
+	<operation name="Timestamp Utility">
+      <participant name="TimestampUtilService"/>
+      <output message="TimestampUtilServiceTypeInputMessage">
+        <assign to="action">add</assign>
+        <assign to="baseTime">now</assign>
+        <assign to="format">yyyy-MM-dd HH:mm:ss</assign>
+        <assign to="offsetTime">1800</assign>
+        <assign to="scale">sec</assign>
+        <assign to="." from="*"/>
+      </output>
+      <input message="inmsg">
+        <assign to="/ProcessData/CURRENT_TIMESTAMP" from="*" append="true"/>
+      </input>
+    </operation>
+
+  <!-- file looping for getting each file --> 
+  
+    <assign name="Assign" to="FILE_COUNT">1</assign>
+    <choice name="Condition">
+      <select>
+        <case ref="FILE_CONDITION" activity="PJ"/>
+      </select>
+
+      <sequence name="PJ">
+        <assign name="Assign" to="PrimaryDocument" from="//*[starts-with(name(),&apos;FSA_Document&apos;)][position()=/ProcessData/FILE_COUNT/text()]/@SCIObjectID"></assign>
+        
+	<!-- Getting Current_filename --> 	
+		<assign name="Assign" to="current_filename" from="/ProcessData/PrimaryDocument/text()"></assign>
+		
+		
+	<!-- Cheking the file exist in data base to prevent dublicates -->
+                        <operation name="Lightweight JDBC Adapter">
+						<participant name="CM_FRAMEWORK"/>
+						<output message="LightweightJDBCAdapterTypeInputMessage">
+							<assign to="pool">oraclePool</assign> 
+							<assign to="query_type">SELECT</assign>
+							<assign to="row_name">Process</assign>
+							<assign to="result_name">result</assign>
+							<assign to="sql">SELECT FILENAME FROM PROCESSED_LOGS
+                                             WHERE FILENAME = '$current_filename$'
+                                             AND PROCESSED_TIMESTAMP > CURRENT_TIMESTAMP - INTERVAL '5' HOUR </assign>
+							<assign to="." from="*"/>
+						</output>
+						<input message="inmsg">
+							<assign to="." from="*"/>
+						</input>
+					</operation>
+
+					
+		<assign name="Assign" to="DOCUMENT" from="/ProcessData/PrimaryDocument/@SCIObjectID"></assign>
+	<!-- placing the files in to destination folder --> 
+	
+        <operation name="File System Adapter">
+          <participant name="E5FileSystem"/>
+          <output message="FileSystemInputMessage">
+            <assign to="." from="*"></assign>
+            <assign to="Action">FS_EXTRACT</assign>
+            <assign to="bootstrap">false</assign>
+            <assign to="extractionFolder">/software/data/mysftpuser/upload/Praveen/Outbound</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+        </operation>
+		
+	<!-- Inserting the file names in to Data Base --> 
+
+        <operation name="Lightweight JDBC Adapter">
+		    <participant name="CM_FRAMEWORK"/>
+		  <output message="LightweightJDBCAdapterTypeInputMessage">
+			<assign to="pool">oraclePool</assign> 
+			<assign to="query_type">SELECT</assign>
+			<assign to="row_name">Process</assign>
+			<assign to="result_name">result</assign>
+			<assign to="sql">INSERT INTO PROCESSED_LOGS (FILENAME, PROCESSED_TIMESTAMP)
+                             VALUES ('$current_filename$', CURRENT_TIMESTAMP) </assign>
+			<assign to="." from="*"/>
+		  </output>
+		    <input message="inmsg">
+			  <assign to="." from="*"/>
+			</input>
+		</operation>
+	
+
+        <assign name="Assign" to="FILE_COUNT" from="FILE_COUNT+1"></assign>
+        <repeat name="Repeat" ref="Condition"/>
+
+      </sequence>
+    </choice>
+  </sequence>
+</process>
