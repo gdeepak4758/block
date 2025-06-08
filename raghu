@@ -1,0 +1,30 @@
+<process name="EDE_AWS_Deliver_Logs">
+<sequence name="Sequence Start">
+<operation name="Get Document Information Service">
+          <participant name="GetDocumentInfoService"/>
+          <output message="GetDocumentInfoServiceTypeInputMessage">
+            <assign to="." from="*"></assign>
+          </output>
+          <input message="inmsg">
+            <assign to="." from="*"></assign>
+          </input>
+</operation>
+
+<operation name="Lightweight JDBC Adapter">
+      <participant name="LightweightJDBCAdapterQuery"/>
+      <output message="LightweightJDBCAdapterTypeInputMessage">
+        <assign to="." from="*"></assign>       
+        <assign to="param1" from="/ProcessData/DocumentName/text()"></assign>       
+        <assign to="paramtype1">String</assign>
+        <assign to="pool">oraclePool</assign>
+        <assign to="query_type">INSERT</assign>
+        <assign to="result_name">result</assign>
+        <assign to="row_name">row</assign>
+        <assign to="sql">INSERT INTO FILENAMES(Current_Filename) VALUES(?)</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"></assign>
+      </input>
+    </operation>
+	</sequence>
+</process>
