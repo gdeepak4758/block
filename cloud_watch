@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<process name="EDE_Cloudwatch_Deliver_Logs">
+  <rule name="FILE_CONDITION">
+    <condition>number(//FILE_COUNT/text()) &lt;= number(//FSA_DocumentCount/text())</condition>
+  </rule>
+
+  <rule name="FILE_Check">
+    <condition>string(/ProcessData/result/row/FILENAME/text()) != string(/ProcessData/current_filename/text())</condition>
+  </rule>
+
+  <sequence name="Sequence Start">
+    <operation name="File System Adapter">
+      <participant name="E5FileSystem"/>
+      <output message="FileSystemInputMessage">
+        <assign to="." from="*"/>
+        <assign to="Action">FS_COLLECT</assign>
+        <assign to="bootstrap">false</assign>
+        <assign to="collectionFolder">/sfgdata/documents/s3temp</assign>
+        <assign to="fileModTimeThreshold">10</assign>
+        <assign to="deleteAfterCollect">false</assign>
+        <assign to="thresholdWait">true</assign>
+        <assign to="filter">*_CyberLogs.json</assign>
+        <assign to="maxThreads">10</assign>
+        <assign to="collectMultiple">true</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"/>
+      </input>
+    </operation>
+
+    <assign to="PrimaryDocument" from="//*[starts-with(name(),'FSA_Document')][1]/@SCIOjectID"/>
+    <assign to="FILE_COUNT">1</assign>
+
+    <choice name="Condition">
+      <select>
+        <case ref="FILE_CONDITION" activity="PJ"/>
+      </select>
+
+      <sequence name="PJ">
+        <operation name="Get Document Information Service">
+          <participant name="GetDocumentInfoService"/>
+          <output message="GetDocumentInfoServiceTypeInputMessage">
+            <assign to="." from="*"/>
+          </output>
+          <input message="inmsg">
+            <assign to="DocumentName" from="*"/>
+          </input>
+        </operation>
+
+        <assign to="PrimaryDocument" from="//*[starts-with(name(),'FSA_Document')][position()=/ProcessData/FILE_COUNT/text()]/@SCIOjectID"/>
+        <assign to="current_filename" from="/ProcessData/DocumentName/DocumentName/text()"/>
+
+        <operation name="Lightweight JDBC Adapter">
+          <participant name="LightweightJDBCAdapterQuery"/>
+          <output message="LightweightJDBCAdapterTypeInputMessage">
+            <assign to="param1" from="/ProcessData/DocumentName/DocumentName/text()"/>
+            <assign to="paramtype1">String</assign>
+            <assign to="pool">oraclePool</assign>
+            <assign to="query_type">SELECT</assign>
+            <assign to="row_name">row</assign>
+            <assign to="result_name">result</assign>
+            <assign to="sql">SELECT FILENAME FROM process_logs WHERE FILENAME like ?</assign>
+            <assign to="from">#</assign>
+          </output>
+          <input message="inmsg">
+            <assign to="from">DocToDOM(PrimaryDocument)</assign>
+          </input>
+        </operation>
+
+        <choice name="Condition1">
+          <select>
+            <case ref="FILE_Check" activity="PR"/>
+          </select>
+
+          <sequence name="PR">
+            <assign to="DOCUMENT" from="/ProcessData/PrimaryDocument/@SCIOjectID"/>
+            <operation name="File System Adapter">
+              <participant name="E5FileSystem"/>
+              <output message="FileSystemInputMessage">
+                <assign to="." from="*"/>
+                <assign to="Action">FS_EXTRACT</assign>
+                <assign to="bootstrap">false</assign>
+                <assign to="extractionFolder">/sfg/sterlingintegrator/install/cloudwatch/tmp</assign>
+              </output>
+              <input message="inmsg">
+                <assign to="." from="*"/>
+              </input>
+            </operation>
+
+            <operation name="Lightweight JDBC Adapter">
+              <participant name="LightweightJDBCAdapterQuery"/>
+              <output message="LightweightJDBCAdapterTypeInputMessage">
+                <assign to="param1" from="/ProcessData/DocumentName/DocumentName/text()"/>
+                <assign to="paramtype1">String</assign>
+                <assign to="pool">oraclePool</assign>
+                <assign to="query_type">INSERT</assign>
+                <assign to="result_name">result</assign>
+                <assign to="sql">INSERT INTO process_logs (FILENAME) VALUES(?)</assign>
+                <assign to="from">#</assign>
+              </output>
+              <input message="inmsg">
+                <assign to="." from="*"/>
+              </input>
+            </operation>
+          </sequence>
+        </choice>
+
+        <assign to="FILE_COUNT" from="FILE_COUNT+1"/>
+        <repeat name="Repeat" ref="Condition"/>
+      </sequence>
+    </choice>
+
+    <operation name="Release Service">
+      <participant name="ReleaseService"/>
+      <output message="ReleaseServiceTypeInputMessage">
+        <assign to="TARGET">/ProcessData/PrimaryDocument /ProcessData/current_filename /ProcessData/result/row/FILENAME /ProcessData/DocumentName</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"/>
+      </input>
+    </operation>
+
+    <operation name="File System Adapter">
+      <participant name="EFG_Cyber_Logs"/>
+      <output message="FileSystemInputMessage">
+        <assign to="." from="*"/>
+        <assign to="Action">FS_COLLECT</assign>
+        <assign to="collectZeroByteFiles">false</assign>
+        <assign to="collectionFolder">/sfg/sterlingintegrator/install/cloudwatch/tmp</assign>
+        <assign to="concatenateFiles">true</assign>
+        <assign to="deleteAfterCollect">true</assign>
+        <assign to="fileModTimeThreshold">10</assign>
+        <assign to="thresholdWait">true</assign>
+        <assign to="filter">*_CyberLogs.json</assign>
+        <assign to="maxThreads">10</assign>
+        <assign to="noFileSetSuccess">false</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"/>
+      </input>
+    </operation>
+
+    <assign to="SFG_logs" from="concat('sfg_logs_', '.', '.', '.json')"/>
+
+    <operation name="File System Adapter">
+      <participant name="E5FileSystem"/>
+      <output message="FileSystemInputMessage">
+        <assign to="Action">FS_EXTRACT</assign>
+        <assign to="assignedFilename" from="/ProcessData/SFG_logs/text()"/>
+        <assign to="bootstrap">false</assign>
+        <assign to="extractionFolder">/sfg/sterlingintegrator/install/cloudwatch</assign>
+      </output>
+      <input message="inmsg">
+        <assign to="." from="*"/>
+      </input>
+    </operation>
+  </sequence>
+</process>
