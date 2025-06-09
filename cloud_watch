@@ -1,4 +1,3 @@
-<?xml version="1.0" encoding="UTF-8"?>
 <process name="EDE_Cloudwatch_Deliver_Logs">
   <rule name="FILE_CONDITION">
     <condition>number(//FILE_COUNT/text()) &lt;= number(//FSA_DocumentCount/text())</condition>
